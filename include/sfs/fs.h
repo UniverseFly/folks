@@ -4,7 +4,9 @@
 
 #include "sfs/disk.h"
 
-#include <stdint.h>
+#include <cstdint>
+#include <sys/_types/_ssize_t.h>
+
 
 class FileSystem {
 public:
