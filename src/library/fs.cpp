@@ -46,8 +46,7 @@ void FileSystem::debug(Disk *disk) {
           // x + y - 1 / y == ceil(x/y)
           const uint32_t totalBlocks = (inode.Size + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
           // Here we only calculate the direct blocks. 5 here cuz for an inode block 5 ptrs are direct.
-          if (totalBlocks == 0) {}
-          else if (totalBlocks <= 5) {
+          if (totalBlocks <= 5) {
             // only direct blocks
             printf("    direct blocks:");
             for (uint32_t k = 0; k != totalBlocks; ++k) {
@@ -185,9 +184,29 @@ void FileSystem::initFreeBlocks_forInodeBlock(const Inode (&inodes)[INODES_PER_B
 
 ssize_t FileSystem::create() {
   // Locate free inode in inode table
-
-  // Record inode if found
-  return 0;
+  const auto disk = getDisk();
+  const auto &superblock = getSuperblock();
+  // Iterate through inode blocks, and then for each
+  // block iterate through all inodes
+  Block inodeBlock;
+  for (uint32_t i = 0; i < superblock.InodeBlocks; ++i) {
+    disk->read(i + 1, inodeBlock.Data);
+    for (uint32_t j = 0; j < INODES_PER_BLOCK; ++j) {
+      auto &inode = inodeBlock.Inodes[j];
+      // Because inodes are all located at the start of the disk,
+      // if we can find an invalid one it can be used for creation.
+      if (inode.Valid == 0) {
+        inode.Valid = 1;
+        // make inode change persistent
+        disk->write(i + 1, inodeBlock.Data);
+        // the inumber
+        return i * INODES_PER_BLOCK + j;
+      }
+    }
+  }
+  
+  // Record inode if not found
+  return -1;
 }
 
 // Remove inode ----------------------------------------------------------------
