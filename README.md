@@ -20,7 +20,13 @@ Design
 >       - How will you determine all the information related to an inode?
 >       - How will you determine all the blocks related to an inode?
 
-Response.
+Response:
+- First read the data to the `union Block`, then use the field `Block.Super` for access, and finally perform
+data checkning.
+- From `Super.INodes` imply the number of inode blocks `num`. Then from 1 to `num`: first read to the array `Block.INodes`, and then traverse this array to access `128 = 4096(block size)/32(sizeof INode)` INodes per block. Note that if the traversed number of inodes exceeds `Super.Inodes`, we should stop.
+- First we can have `INode.Size` for its size and `ceil(Size/4KB(block size))` for the total number of blocks related to this inode.
+  - Then, to calculate all direct blocks, if the total number of blocks is smaller than or equal to 5(max num of direct blocks), iterate from 0 to `totalBlocks`.
+  - Otherwise, there are indirect blocks. Calculate the inode by reading `block.Indirect`, read this block, and traverse it util the number of traversed indirect data blocks plus 5 is equal to `totalBlocks`.
 
 > 2. To implement `FileSystem::format`, you will need to write the superblock
 >    and clear the remaining blocks in the file system.
