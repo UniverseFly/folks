@@ -9,3 +9,6 @@
 # the build directory
 build
 bin
+
+compile_commands.json
+.cache
