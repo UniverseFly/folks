@@ -38,19 +38,22 @@ private:
   };
 
   // TODO: Internal helper functions
-  Disk *getDisk() { return disk; }
+  Disk *getDisk() const { return disk; }
   
-  SuperBlock getSuperblock() {
+  static SuperBlock getSuperblock(Disk *disk) {
     Block block;
     disk->read(0, block.Data);
     return block.Super;
   }
 
+  SuperBlock getSuperblock() const {
+    return getSuperblock(disk);
+  }
+
   void initFreeBlocks_forInodeBlock(const Inode (&inodes)[INODES_PER_BLOCK]);
 
   // TODO: Internal member variables
-  Disk *disk;
-  SuperBlock superblock;
+  Disk *disk = nullptr;
   // Bitmap for freeblocks, true indicating free
   std::vector<bool> freeBlocks;
 

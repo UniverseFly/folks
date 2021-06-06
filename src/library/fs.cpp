@@ -104,24 +104,23 @@ bool FileSystem::format(Disk *disk) {
 bool FileSystem::mount(Disk *disk) {
   if (disk->mounted()) { return false; }
   // Read superblock
-  Block superblock;
-  disk->read(0, superblock.Data);
-  if (superblock.Super.MagicNumber != MAGIC_NUMBER) {
+  const auto superblock = getSuperblock(disk);
+  if (superblock.MagicNumber != MAGIC_NUMBER) {
     return false;
   }
 
   // if # of blocks is zero, it must be wrong
-  if (superblock.Super.Blocks == 0) {
+  if (superblock.Blocks == 0) {
     return false;
   }
   
   // # of inodes and # of superblock.inodes should be consistent
-  if (superblock.Super.Inodes != superblock.Super.InodeBlocks * INODES_PER_BLOCK) {
+  if (superblock.Inodes != superblock.InodeBlocks * INODES_PER_BLOCK) {
     return false;
   }
 
   // # of blocks must be > # of InodeBlocks
-  if (superblock.Super.Blocks < superblock.Super.InodeBlocks) {
+  if (superblock.Blocks < superblock.InodeBlocks) {
     return false;
   }
 
@@ -130,13 +129,12 @@ bool FileSystem::mount(Disk *disk) {
 
   // Copy metadata
   this->disk = disk;
-  this->superblock = superblock.Super;
   
   // Allocate free block bitmap
   freeBlocks = std::vector<bool>(disk->size(), true);
   freeBlocks[0] = false;
   Block inodeBlock;
-  for (uint32_t i = 0; i < getSuperblock().InodeBlocks; ++i) {
+  for (uint32_t i = 0; i < superblock.InodeBlocks; ++i) {
     disk->read(i + 1, inodeBlock.Data);
     initFreeBlocks_forInodeBlock(inodeBlock.Inodes);
   }

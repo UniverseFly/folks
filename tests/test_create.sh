@@ -537,7 +537,7 @@ Inode 126:
 Inode 127:
     size: 0 bytes
     direct blocks:
-264 disk block reads
+262 disk block reads
 127 disk block writes
 EOF
 }
