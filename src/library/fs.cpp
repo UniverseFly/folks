@@ -80,33 +80,114 @@ void FileSystem::debug(Disk *disk) {
 // Format file system ----------------------------------------------------------
 
 bool FileSystem::format(Disk *disk) {
-    // Write superblock
+  if (disk->mounted()) { return false; }
+  // Write superblock
+  Block superblock;
+  superblock.Super.MagicNumber = MAGIC_NUMBER;
+  superblock.Super.Blocks = disk->size();
+  // ceiling
+  superblock.Super.InodeBlocks = (disk->size() + 10 - 1) / 10;
+  superblock.Super.Inodes = superblock.Super.InodeBlocks * INODES_PER_BLOCK;
+  disk->write(0, superblock.Data);
 
-    // Clear all other blocks
-    return true;
+  // Clear all other blocks
+  Block emptyBlock;
+  memset(&emptyBlock.Data, 0, sizeof(emptyBlock));
+  // note the i+1 here, otherwise the index will exceed the array boundary.
+  for (uint32_t i = 0; i + 1 < disk->size(); ++i) {
+    disk->write(i + 1, emptyBlock.Data);
+  }
+  return true;
 }
 
 // Mount file system -----------------------------------------------------------
 
 bool FileSystem::mount(Disk *disk) {
-    // Read superblock
+  if (disk->mounted()) { return false; }
+  // Read superblock
+  Block superblock;
+  disk->read(0, superblock.Data);
+  if (superblock.Super.MagicNumber != MAGIC_NUMBER) {
+    return false;
+  }
 
-    // Set device and mount
+  // if # of blocks is zero, it must be wrong
+  if (superblock.Super.Blocks == 0) {
+    return false;
+  }
+  
+  // # of inodes and # of superblock.inodes should be consistent
+  if (superblock.Super.Inodes != superblock.Super.InodeBlocks * INODES_PER_BLOCK) {
+    return false;
+  }
 
-    // Copy metadata
+  // # of blocks must be > # of InodeBlocks
+  if (superblock.Super.Blocks < superblock.Super.InodeBlocks) {
+    return false;
+  }
 
-    // Allocate free block bitmap
+  // Set device and mount
+  disk->mount();
 
-    return true;
+  // Copy metadata
+  this->disk = disk;
+  this->superblock = superblock.Super;
+  
+  // Allocate free block bitmap
+  freeBlocks = std::vector<bool>(disk->size(), true);
+  freeBlocks[0] = false;
+  Block inodeBlock;
+  for (uint32_t i = 0; i < getSuperblock().InodeBlocks; ++i) {
+    disk->read(i + 1, inodeBlock.Data);
+    initFreeBlocks_forInodeBlock(inodeBlock.Inodes);
+  }
+
+  return true;
+}
+
+void FileSystem::initFreeBlocks_forInodeBlock(const Inode (&inodes)[INODES_PER_BLOCK]) {
+  const auto disk = getDisk();
+  for (uint32_t i = 0; i < INODES_PER_BLOCK; ++i) {
+    const auto &inode = inodes[i];
+    if (inode.Valid == 1) {
+      // The total number of blocks related to this inode
+      // x + y - 1 / y == ceil(x/y)
+      const uint32_t totalBlocks = (inode.Size + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
+      // Here we only calculate the direct blocks. 5 here cuz for an inode block 5 ptrs are direct.
+      if (totalBlocks == 0) {}
+      else if (totalBlocks <= 5) {
+        // only direct blocks
+        for (uint32_t k = 0; k != totalBlocks; ++k) {
+          freeBlocks[inode.Direct[k]] = false;
+        }
+      } else {
+        freeBlocks[inode.Direct[0]] = false;
+        freeBlocks[inode.Direct[1]] = false;
+        freeBlocks[inode.Direct[2]] = false;
+        freeBlocks[inode.Direct[3]] = false;
+        freeBlocks[inode.Direct[4]] = false;
+        freeBlocks[inode.Indirect] = false;
+
+        // k stands for the indirect block index, starting from 5
+        // k + 5 != ... instead of k != ... - 5 cuz they're unsigned
+        Block indirectBlock;
+        disk->read(inode.Indirect, indirectBlock.Data);
+        printf("    indirect data blocks:");
+        for (uint32_t k = 0; k + 5 != totalBlocks; ++k) {
+          freeBlocks[indirectBlock.Pointers[k]] = false;
+        }
+      }
+    }
+  }
 }
 
 // Create inode ----------------------------------------------------------------
 
 ssize_t FileSystem::create() {
-    // Locate free inode in inode table
+  // Locate free inode in inode table
 
-    // Record inode if found
-    return 0;
+  // Record inode if found
+  return 0;
 }
 
 // Remove inode ----------------------------------------------------------------
