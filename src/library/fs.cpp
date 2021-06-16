@@ -7,9 +7,11 @@
 
 #include <assert.h>
 #include <cstdio>
+#include <cstring>
 #include <stdio.h>
 #include <string.h>
 #include <sys/_types/_size_t.h>
+#include <vector>
 
 // Debug file system -----------------------------------------------------------
 
@@ -211,10 +213,7 @@ ssize_t FileSystem::create() {
 bool FileSystem::remove(size_t inumber) {
   // Load inode information
   Block inodeBlock;
-  uint32_t inodeBlkIndex = inumber / INODES_PER_BLOCK + 1;
-  uint32_t offset = inumber % INODES_PER_BLOCK;
-  disk->read(inodeBlkIndex, inodeBlock.Data);
-  auto &inode = inodeBlock.Inodes[offset];
+  auto &inode = getInode(inumber, inodeBlock);
   if (inode.Valid == 0) { return false; }
 
   // The total number of blocks related to this inode
@@ -248,7 +247,7 @@ bool FileSystem::remove(size_t inumber) {
   // Clear inode in inode table
   // No need to clean other fields since it's an invalid inode
   inode.Valid = 0;
-  disk->write(inodeBlkIndex, inodeBlock.Data);
+  disk->write(getInodeBlkIndex(inumber), inodeBlock.Data);
 
   return true;
 }
@@ -274,18 +273,79 @@ ssize_t FileSystem::stat(size_t inumber) {
 
 ssize_t FileSystem::read(size_t inumber, char *data, size_t length, size_t offset) {
   // Load inode information
+  Block inodeBlock;
 
+  auto &inode = getInode(inumber, inodeBlock);
+  if (inode.Valid == 0) {
+    return -1;
+  }
+  
   // Adjust length
+  if (offset >= inode.Size) {
+    return -1;
+  }
+
+  length = length > inode.Size - offset ? inode.Size - offset : length;
 
   // Read block and copy to data
-  return 0;
+  Block buffer;
+  char *currentData = data;
+  
+  uint32_t startBlk = offset / Disk::BLOCK_SIZE;
+  uint32_t endBlk = (offset + length + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
+  printf("START: %d, END: %d\n", startBlk, endBlk);
+
+  // Direct blocks
+  for (uint32_t i = startBlk; i < endBlk; ++i) {
+    auto diskBlkNo = getDiskBlkNo(inode, i);
+    disk->read(diskBlkNo, buffer.Data);
+    // For the last block do not copy all the data
+    if (i == endBlk - 1) {
+      strncpy(currentData, buffer.Data, length == Disk::BLOCK_SIZE ? length : length % Disk::BLOCK_SIZE);
+    } else {
+      strncpy(currentData, buffer.Data, Disk::BLOCK_SIZE);
+      currentData += Disk::BLOCK_SIZE;
+    }
+  }
+  
+  return length;
 }
 
 // Write to inode --------------------------------------------------------------
 
 ssize_t FileSystem::write(size_t inumber, char *data, size_t length, size_t offset) {
   // Load inode
-    
+  Block inodeBlock;
+
+  auto &inode = getInode(inumber, inodeBlock);
+  if (inode.Valid == 0) {
+    return -1;
+  }
+  
+  if (offset > inode.Size) {
+    return -1;
+  }
+  
+  uint32_t startBlk = offset / Disk::BLOCK_SIZE;
+  uint32_t endBlk = (offset + length + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
+  
   // Write block and copy to data
-  return 0;
+  auto oldBlockCount = (inode.Size + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
+  auto newBlockCount = (offset + length + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
+
+  if (newBlockCount > oldBlockCount) {
+    auto blockIndices = allocateBlocks(newBlockCount - oldBlockCount);
+    for (uint32_t i = oldBlockCount; i < newBlockCount; ++i) {
+      setDiskBlkNo(inode, i, blockIndices[i - oldBlockCount]);
+    }
+    inode.Size = offset + length;
+  }
+  auto currentData = data;
+  for (uint32_t i = startBlk; i < endBlk; ++i) {
+    auto index = getDiskBlkNo(inode, i);
+    disk->write(index, currentData);
+    currentData += Disk::BLOCK_SIZE;
+  }
+
+  return length;
 }

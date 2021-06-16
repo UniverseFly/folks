@@ -4,7 +4,9 @@
 
 #include "sfs/disk.h"
 
+#include <_types/_uint32_t.h>
 #include <cstdint>
+#include <functional>
 #include <sys/_types/_ssize_t.h>
 #include <vector>
 
@@ -48,6 +50,34 @@ private:
 
   SuperBlock getSuperblock() const {
     return getSuperblock(disk);
+  }
+
+  uint32_t getInodeBlkIndex(uint32_t inumber) const {
+    return inumber / INODES_PER_BLOCK + 1;
+  }
+
+  Inode &getInode(uint32_t inumber, Block &inodeBlock) const {
+    uint32_t inodeBlkIndex = getInodeBlkIndex(inumber);
+    uint32_t offset = inumber % INODES_PER_BLOCK;
+    disk->read(inodeBlkIndex, inodeBlock.Data);
+    return inodeBlock.Inodes[offset];
+  }
+
+  /// return the disk block index for a given inode block index
+  uint32_t getDiskBlkNo(const Inode &inode, uint32_t blockIndex) {
+    if (blockIndex < 5) {
+      return inode.Direct[blockIndex];
+    }  else {
+      Block indirectBlk;
+      disk->read(inode.Indirect, indirectBlk.Data);
+      return indirectBlk.Pointers[blockIndex - 5];
+    }
+  }
+
+  void setDiskBlkNo(Inode &inode, uint32_t blkIndex, uint32_t value) {}
+
+  std::vector<uint32_t> allocateBlocks(uint32_t count) {
+    
   }
 
   void initFreeBlocks_forInodeBlock(const Inode (&inodes)[INODES_PER_BLOCK]);
