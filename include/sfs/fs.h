@@ -5,6 +5,7 @@
 #include "sfs/disk.h"
 
 #include <_types/_uint32_t.h>
+#include <cassert>
 #include <cstdint>
 #include <functional>
 #include <sys/_types/_ssize_t.h>
@@ -64,21 +65,52 @@ private:
   }
 
   /// return the disk block index for a given inode block index
-  uint32_t getDiskBlkNo(const Inode &inode, uint32_t blockIndex) {
-    if (blockIndex < 5) {
-      return inode.Direct[blockIndex];
-    }  else {
+  uint32_t getDiskBlkNo_direct(const Inode &inode, uint32_t blockIndex) {
+    assert(blockIndex < 5);
+    return inode.Direct[blockIndex];
+  }
+
+  uint32_t getDiskBlkNo_indirect(const uint32_t (&pointers)[1024], uint32_t blockIndex) {
+    assert(blockIndex >= 5);
+    return pointers[blockIndex - 5];
+  }
+
+  /// Set the value for an inode block
+  void setDiskBlkNo_direct(Inode &inode, uint32_t blkIndex, uint32_t value) {
+    assert(blkIndex < 5);
+    inode.Direct[blkIndex] = value;
+    if (blkIndex < 5) {
+      inode.Direct[blkIndex] = value;
+    } else {
       Block indirectBlk;
       disk->read(inode.Indirect, indirectBlk.Data);
-      return indirectBlk.Pointers[blockIndex - 5];
+      indirectBlk.Pointers[blkIndex - 5] = value;
     }
   }
 
-  void setDiskBlkNo(Inode &inode, uint32_t blkIndex, uint32_t value) {}
-
-  std::vector<uint32_t> allocateBlocks(uint32_t count) {
-    
+  void setDiskBlkNo_indirect(uint32_t (&pointers)[1024], uint32_t blkIndex, uint32_t value) {
+    assert(blkIndex >= 5);
+    pointers[blkIndex - 5] = value;
   }
+
+  /// alocate free blocks and make them not free
+  std::vector<uint32_t> allocateBlocks(uint32_t count) {
+    std::vector<uint32_t> blocks;
+
+    auto countIter = count;
+    for (std::size_t i = 1; countIter > 0 and i < freeBlocks.size(); ++i) {
+      if (freeBlocks[i]) {
+        freeBlocks[i] = false;
+        blocks.push_back(i);
+        --countIter;
+      }
+    }
+    printf("BLOCKSIZE %lu and COUNT %d\n", blocks.size(), count);
+
+    return blocks;
+  }
+
+  
 
   void initFreeBlocks_forInodeBlock(const Inode (&inodes)[INODES_PER_BLOCK]);
 
