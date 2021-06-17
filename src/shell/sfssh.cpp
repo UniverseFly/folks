@@ -225,7 +225,7 @@ void do_help(Disk &disk, FileSystem &fs, int args, char *arg1, char *arg2) {
 }
 
 bool copyout(FileSystem &fs, size_t inumber, const char *path) {
-    FILE *stream = fopen(path, "w");
+    FILE *stream = fopen(path, "wb");
     if (stream == nullptr) {
     	fprintf(stderr, "Unable to open %s: %s\n", path, strerror(errno));
     	return false;
@@ -248,7 +248,7 @@ bool copyout(FileSystem &fs, size_t inumber, const char *path) {
 }
 
 bool copyin(FileSystem &fs, const char *path, size_t inumber) {
-    FILE *stream = fopen(path, "r");
+    FILE *stream = fopen(path, "rb");
     if (stream == nullptr) {
     	fprintf(stderr, "Unable to open %s: %s\n", path, strerror(errno));
     	return false;

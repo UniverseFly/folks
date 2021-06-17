@@ -75,6 +75,18 @@ private:
     return pointers[blockIndex - 5];
   }
 
+  /// helper function combining the above to
+  uint32_t getDiskBlkNo(const Inode &inode, uint32_t blockIndex, Block &indirectBlk) {
+    uint32_t diskBlkNo;
+    if (blockIndex < 5) {
+      diskBlkNo = getDiskBlkNo_direct(inode, blockIndex);
+    } else {
+      disk->read(inode.Indirect, indirectBlk.Data);
+      diskBlkNo = getDiskBlkNo_indirect(indirectBlk.Pointers, blockIndex);
+    }
+    return diskBlkNo;
+  }
+
   /// Set the value for an inode block
   void setDiskBlkNo_direct(Inode &inode, uint32_t blkIndex, uint32_t value) {
     assert(blkIndex < 5);

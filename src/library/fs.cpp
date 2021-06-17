@@ -11,6 +11,7 @@
 #include <cstring>
 #include <stdio.h>
 #include <string.h>
+#include <string>
 #include <sys/_types/_size_t.h>
 #include <vector>
 
@@ -295,27 +296,17 @@ ssize_t FileSystem::read(size_t inumber, char *data, size_t length, size_t offse
   
   uint32_t startBlk = offset / Disk::BLOCK_SIZE;
   uint32_t endBlk = (offset + length + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
-  printf("START: %d, END: %d\n", startBlk, endBlk);
+  // the offset point to read from the first block
+  uint32_t fstBlkStartOffset = offset % Disk::BLOCK_SIZE;
 
+  std::string str_data; // cheating :)
   Block indirectBlk;
   for (uint32_t i = startBlk; i < endBlk; ++i) {
-    printf("HI I AM READ.\n");
-    uint32_t diskBlkNo;
-    if (i < 5) {
-      diskBlkNo = getDiskBlkNo_direct(inode, i);
-    } else {
-      disk->read(inode.Indirect, indirectBlk.Data);
-      diskBlkNo = getDiskBlkNo_indirect(indirectBlk.Pointers, i);
-    }
+    auto diskBlkNo = getDiskBlkNo(inode, i, indirectBlk);
     disk->read(diskBlkNo, buffer.Data);
-    // For the last block do not copy all the data
-    if (i == endBlk - 1) {
-      strncpy(currentData, buffer.Data, length == Disk::BLOCK_SIZE ? length : length % Disk::BLOCK_SIZE);
-    } else {
-      strncpy(currentData, buffer.Data, Disk::BLOCK_SIZE);
-      currentData += Disk::BLOCK_SIZE;
-    }
+    str_data += buffer.Data;
   }
+  strncpy(data, str_data.c_str() + fstBlkStartOffset, length);
   
   return length;
 }
@@ -341,6 +332,9 @@ ssize_t FileSystem::write(size_t inumber, char *data, size_t length, size_t offs
   // Write block and copy to data
   uint32_t oldBlockCount = (inode.Size + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
   uint32_t newBlockCount = (offset + length + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
+  if (newBlockCount < oldBlockCount) {
+    newBlockCount = oldBlockCount;
+  }
 
   printf("START %d, END %d, OLDC %d, NEWC %d\n", startBlk, endBlk, oldBlockCount, newBlockCount);
 
@@ -392,7 +386,9 @@ ssize_t FileSystem::write(size_t inumber, char *data, size_t length, size_t offs
   }
 
   if (indSuccesfullyAllocated or (inode.Size + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE >= 5) {
-    disk->write(inode.Indirect, indBlk.Data);
+    if (inode.Indirect != 0) {
+      disk->write(inode.Indirect, indBlk.Data);
+    }
   }
   disk->write(getInodeBlkIndex(inumber), inodeBlock.Data);
 
