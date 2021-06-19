@@ -7,12 +7,15 @@
 #include <algorithm>
 
 #include <assert.h>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <stdexcept>
 #include <stdio.h>
 #include <string.h>
 #include <string>
 #include <sys/_types/_size_t.h>
+#include <sys/_types/_ssize_t.h>
 #include <vector>
 
 // Debug file system -----------------------------------------------------------
@@ -199,6 +202,7 @@ ssize_t FileSystem::create() {
       // if we can find an invalid one it can be used for creation.
       if (inode.Valid == 0) {
         inode.Valid = 1;
+        inode.Size = 0;
         // make inode change persistent
         disk->write(i + 1, inodeBlock.Data);
         // the inumber
@@ -291,22 +295,24 @@ ssize_t FileSystem::read(size_t inumber, char *data, size_t length, size_t offse
   length = length > inode.Size - offset ? inode.Size - offset : length;
 
   // Read block and copy to data
-  Block buffer;
-  char *currentData = data;
-  
   uint32_t startBlk = offset / Disk::BLOCK_SIZE;
-  uint32_t endBlk = (offset + length + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
+
   // the offset point to read from the first block
   uint32_t fstBlkStartOffset = offset % Disk::BLOCK_SIZE;
-
-  std::string str_data; // cheating :)
+  
+  Block buffer;
   Block indirectBlk;
-  for (uint32_t i = startBlk; i < endBlk; ++i) {
-    auto diskBlkNo = getDiskBlkNo(inode, i, indirectBlk);
+  auto blkIndex = startBlk;
+  uint32_t writeCount = 0;
+  while (writeCount < length) {
+    auto diskBlkNo = getDiskBlkNo(inode, blkIndex, indirectBlk);
     disk->read(diskBlkNo, buffer.Data);
-    str_data += buffer.Data;
+    for (uint32_t j = blkIndex == startBlk ? fstBlkStartOffset : 0;
+         j < Disk::BLOCK_SIZE and writeCount < length;
+         ++j) {
+      data[writeCount++] = buffer.Data[j];
+    }
   }
-  strncpy(data, str_data.c_str() + fstBlkStartOffset, length);
   
   return length;
 }
@@ -325,72 +331,94 @@ ssize_t FileSystem::write(size_t inumber, char *data, size_t length, size_t offs
   if (offset > inode.Size) {
     return -1;
   }
-  
+
   uint32_t startBlk = offset / Disk::BLOCK_SIZE;
-  uint32_t endBlk = (offset + length + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
-  
-  // Write block and copy to data
-  uint32_t oldBlockCount = (inode.Size + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
-  uint32_t newBlockCount = (offset + length + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
-  if (newBlockCount < oldBlockCount) {
-    newBlockCount = oldBlockCount;
-  }
 
-  printf("START %d, END %d, OLDC %d, NEWC %d\n", startBlk, endBlk, oldBlockCount, newBlockCount);
-
-  Block indBlk;
-  bool indSuccesfullyAllocated = false;
-  if (newBlockCount > oldBlockCount) {
-    // need to allocate indirect block
-    if (oldBlockCount <= 5 and newBlockCount > 5) {
-      auto indirect = allocateBlocks(1);
-      if (!indirect.empty()) {
-        printf("INDIRECT: %d", indirect[0]);
-        inode.Indirect = indirect[0];
-        indSuccesfullyAllocated = true;
-      }
-    }
-    auto blockIndices = allocateBlocks(newBlockCount - oldBlockCount);
-    // need to rectify endBlk since maybe cannot allocate  all blocks
-    printf("%d %d %d\n", newBlockCount, oldBlockCount, blockIndices.size());
-    inode.Size = blockIndices.size() == newBlockCount - oldBlockCount ? offset + length : offset + blockIndices.size() * Disk::BLOCK_SIZE;
-    printf("SIZE: %d, %d\n", offset + length, offset + blockIndices.size() * Disk::BLOCK_SIZE);
-    // subtract the 'lost' blocks
-    endBlk -= (newBlockCount - oldBlockCount - blockIndices.size());
-    for (uint32_t i = 0; i < blockIndices.size(); ++i) {
-      assert(blockIndices[i] != 0);
-      auto blkIndex = i + oldBlockCount;
-      if (blkIndex < 5) {
-        setDiskBlkNo_direct(inode, blkIndex, blockIndices[i]);
-      } else {
-        setDiskBlkNo_indirect(indBlk.Pointers, blkIndex, blockIndices[i]);
-      }
-      printf("%d <- %d\n", i + oldBlockCount, blockIndices[i]);
-      // auto d = getDiskBlkNo(inode, i + oldBlockCount);
-      // printf("%d\n", d);
-    }
-  }
+  // write the first block starting at this offset.
+  uint32_t fstBlkStartOffset = offset % Disk::BLOCK_SIZE;
   
-  auto currentData = data;
-  for (uint32_t i = startBlk; i < endBlk; ++i) {
-    printf("HEY: I AM WRITE, %d\n", i);
-    int index;
-    if (i < 5) {
-      index = getDiskBlkNo_direct(inode, i);
+  Block indirectBlk;
+  Block dataBlock;
+  uint32_t writeCount = 0;
+  uint32_t blkIndex = startBlk;
+  while (writeCount < length) {
+    uint32_t blk; // data block No.
+    // need to allocate a new block for inode
+    if (blkIndex >= blockCount(inode)) {
+      blk = allocateBlockForInode(inode);
+      if (blk == -1) {
+        if (offset + writeCount > inode.Size){
+          inode.Size = offset + writeCount;
+        }
+        disk->write(getInodeBlkIndex(inumber), inodeBlock.Data);
+        return writeCount;
+      }
     } else {
-      index = getDiskBlkNo_indirect(indBlk.Pointers, i);
+      blk = getDiskBlkNo(inode, blkIndex, indirectBlk);
     }
-    printf("INDEX %d\n", index);
-    disk->write(index, currentData);
-    currentData += Disk::BLOCK_SIZE;
-  }
-
-  if (indSuccesfullyAllocated or (inode.Size + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE >= 5) {
-    if (inode.Indirect != 0) {
-      disk->write(inode.Indirect, indBlk.Data);
+    disk->read(blk, dataBlock.Data);
+    // write to data block
+    for (uint32_t i = blkIndex == startBlk ? fstBlkStartOffset : 0;
+         i < Disk::BLOCK_SIZE and writeCount < length;
+         ++i) {
+      dataBlock.Data[i] = data[writeCount++];
     }
+    
+    disk->write(blk, dataBlock.Data);
+    if (offset + writeCount > inode.Size){
+      inode.Size = offset + writeCount;
+    }
+    blkIndex += 1;
   }
   disk->write(getInodeBlkIndex(inumber), inodeBlock.Data);
+  return writeCount;
+}
 
-  return inode.Size - offset;
+ssize_t FileSystem::allocateBlockForInode(Inode &inode) {
+  uint32_t blocks = blockCount(inode);
+  // allocate a direct block
+  if (blocks < POINTERS_PER_INODE) {
+    auto blk = allocateBlock();
+    // failed to allocate
+    if (blk == -1) {
+      return -1;
+    }
+    // `blocks` is the next index
+    inode.Direct[blocks] = blk;
+    return blk;
+  }
+  // need to alloc an indirect block besides a data block
+  else if (blocks == POINTERS_PER_INODE) {
+    auto indBlk = allocateBlock();
+    if (indBlk == -1) {
+      return -1;
+    }
+    
+    auto blk = allocateBlock();
+    if (blk == -1) {
+      // reclaim the indirect blk
+      reclaimBlock(indBlk);
+      return -1;
+    }
+    inode.Indirect = indBlk;
+    Block ptrBlock;
+    ptrBlock.Pointers[0] = blk;
+    disk->write(indBlk, ptrBlock.Data);
+    return blk;
+  }
+  // indirect data block
+  else {
+    auto blk = allocateBlock();
+    if (blk == -1) {
+      return -1;
+    }
+    Block ptrBlock;
+    disk->read(inode.Indirect, ptrBlock.Data);
+    ptrBlock.Pointers[blocks - POINTERS_PER_INODE] = blk;
+    disk->write(inode.Indirect, ptrBlock.Data);
+    return blk;
+  }
+  // not reachable
+  throw std::runtime_error("Not reachable");
+  return -1;
 }

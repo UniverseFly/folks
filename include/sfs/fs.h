@@ -75,7 +75,7 @@ private:
     return pointers[blockIndex - 5];
   }
 
-  /// helper function combining the above to
+  /// helper function combining the above two
   uint32_t getDiskBlkNo(const Inode &inode, uint32_t blockIndex, Block &indirectBlk) {
     uint32_t diskBlkNo;
     if (blockIndex < 5) {
@@ -87,42 +87,27 @@ private:
     return diskBlkNo;
   }
 
-  /// Set the value for an inode block
-  void setDiskBlkNo_direct(Inode &inode, uint32_t blkIndex, uint32_t value) {
-    assert(blkIndex < 5);
-    inode.Direct[blkIndex] = value;
-    if (blkIndex < 5) {
-      inode.Direct[blkIndex] = value;
-    } else {
-      Block indirectBlk;
-      disk->read(inode.Indirect, indirectBlk.Data);
-      indirectBlk.Pointers[blkIndex - 5] = value;
-    }
-  }
-
-  void setDiskBlkNo_indirect(uint32_t (&pointers)[1024], uint32_t blkIndex, uint32_t value) {
-    assert(blkIndex >= 5);
-    pointers[blkIndex - 5] = value;
-  }
-
-  /// alocate free blocks and make them not free
-  std::vector<uint32_t> allocateBlocks(uint32_t count) {
-    std::vector<uint32_t> blocks;
-
-    auto countIter = count;
-    for (std::size_t i = 1; countIter > 0 and i < freeBlocks.size(); ++i) {
+  /// alocate one free block and make them not free
+  ssize_t allocateBlock() {
+    for (std::size_t i = 1; i < freeBlocks.size(); ++i) {
       if (freeBlocks[i]) {
         freeBlocks[i] = false;
-        blocks.push_back(i);
-        --countIter;
+        return i;
       }
     }
-    printf("BLOCKSIZE %lu and COUNT %d\n", blocks.size(), count);
-
-    return blocks;
+    return -1;
   }
 
-  
+  uint32_t blockCount(const Inode &inode) const {
+    return (inode.Size + Disk::BLOCK_SIZE - 1) / Disk::BLOCK_SIZE;
+  }
+
+  /// make `index` to be a free block
+  void reclaimBlock(uint32_t index) {
+    freeBlocks[index] = true;
+  }
+
+  ssize_t allocateBlockForInode(Inode &inode);
 
   void initFreeBlocks_forInodeBlock(const Inode (&inodes)[INODES_PER_BLOCK]);
 
