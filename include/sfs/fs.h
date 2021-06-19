@@ -4,12 +4,15 @@
 
 #include "sfs/disk.h"
 
-#include <_types/_uint32_t.h>
+#ifdef __APPLE__
+#include <sys/types.h>
+#endif
+
 #include <cassert>
 #include <cstdint>
 #include <functional>
-#include <sys/_types/_ssize_t.h>
 #include <vector>
+
 
 class FileSystem {
 public:

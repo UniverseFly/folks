@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
     while (true) {
 	char line[BUFSIZ], cmd[BUFSIZ], arg1[BUFSIZ], arg2[BUFSIZ];
 
-    	fprintf(stderr, "sfs> ");
+    	fprintf(stderr, "folks> ");
     	fflush(stderr);
 
     	if (fgets(line, BUFSIZ, stdin) == NULL) {

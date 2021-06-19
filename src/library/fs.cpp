@@ -3,7 +3,6 @@
 #include "sfs/fs.h"
 #include "sfs/disk.h"
 
-#include <_types/_uint32_t.h>
 #include <algorithm>
 
 #include <assert.h>
@@ -14,8 +13,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <string>
-#include <sys/_types/_size_t.h>
-#include <sys/_types/_ssize_t.h>
 #include <vector>
 
 // Debug file system -----------------------------------------------------------
