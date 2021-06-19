@@ -339,7 +339,7 @@ ssize_t FileSystem::write(size_t inumber, char *data, size_t length, size_t offs
   uint32_t writeCount = 0;
   uint32_t blkIndex = startBlk;
   while (writeCount < length) {
-    uint32_t blk; // data block No.
+    ssize_t blk; // data block No.
     // need to allocate a new block for inode
     if (blkIndex >= blockCount(inode)) {
       blk = allocateBlockForInode(inode);
