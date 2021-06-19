@@ -309,6 +309,7 @@ ssize_t FileSystem::read(size_t inumber, char *data, size_t length, size_t offse
          ++j) {
       data[writeCount++] = buffer.Data[j];
     }
+    blkIndex += 1;
   }
   
   return length;
