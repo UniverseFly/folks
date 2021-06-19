@@ -29,7 +29,7 @@ $(SHELL_LINK):		$(SHELL_PROGRAM)
 	cp $(SHELL_PROGRAM) $@
 
 
-test:	$(SHELL_PROGRAM)
+test:	$(SHELL_PROGRAM) $(SHELL_LINK)
 	@for test_script in tests/test_*.sh; do $${test_script}; done
 
 clean:
